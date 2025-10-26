@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSCI Platform</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load React and ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Load Babel for JSX Transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Load Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, collection, onSnapshot, query, where, addDoc, serverTimestamp, orderBy, updateDoc, deleteDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Expose Firebase functions globally for the Babel script block to use
+        window.firebase = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, setDoc, collection, onSnapshot, query, where, addDoc, serverTimestamp, orderBy, updateDoc, deleteDoc, getDocs, setLogLevel
+        };
+    </script>
+</head>
+<body class="bg-gray-50 antialiased">
+
+    <div id="root">
+        <!-- React App will render here -->
+        <div class="flex items-center justify-center min-h-screen bg-gray-50">
+            <div class="text-xl font-semibold text-blue-800 animate-pulse">
+                Loading NSCI Platform...
+            </div>
+        </div>
+    </div>
+
+    <!-- Your React/JSX Code goes here -->
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useMemo } = React;
+        const {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, setDoc, collection, onSnapshot, query, where, addDoc, serverTimestamp, orderBy, updateDoc, deleteDoc, getDocs, setLogLevel
+        } = window.firebase || {};
+
+        // =================================================================================
+        // 🚨 DEPLOYMENT CONFIGURATION BLOCK 🚨
+        const LIVE_FIREBASE_CONFIG = {
+            apiKey: "AIzaSy_YOUR_OWN_API_KEY_HERE",
+            authDomain: "your-project-id-123.firebaseapp.com",
+            projectId: "your-project-id-123",
+            storageBucket: "your-project-id-123.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef1234567890"
+        };
+
+        const LIVE_APP_PATH_ID = 'nsci-live-app-path';
+
+        // Use global variables provided by the Canvas environment, falling back to live config
+        const appId = typeof __app_id !== 'undefined' ? __app_id : LIVE_APP_PATH_ID;
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : LIVE_FIREBASE_CONFIG;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // =================================================================================
+
+
+        const Header = ({ userId, role, setRole, setView }) => {
+            const navItems = {
+                'public': [
+                    { name: 'About Council', view: 'about' },
+                    { name: 'Events Portal', view: 'events' },
+                    { name: 'Membership', view: 'membership' },
+                    { name: 'Club Grading', view: 'grading_report' },
+                ],
+                'coach': [
+                    { name: 'Player Management', view: 'player_management' },
+                    { name: 'Directives/Reports', view: 'coach_reports' },
+                    { name: 'Tournament Hub', view: 'coach_tournaments' },
+                    { name: 'Grading Report', view: 'grading_report' },
+                ],
+                'admin': [
+                    { name: 'Dashboard', view: 'admin_dashboard' },
+                    { name: 'Send Directives', view: 'admin_directives' },
+                    { name: 'Club Grading', view: 'grading_report' },
+                    { name: 'Tournament Approvals', view: 'admin_tournaments' },
+                ]
+            };
+
+            const roleDisplayName = role.charAt(0).toUpperCase() + role.slice(1);
+
+            return (
+                <header className="bg-white shadow-xl sticky top-0 z-10">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex justify-between items-center h-20">
+                            <div className="flex items-center">
+                                <span className="text-3xl font-extrabold tracking-tight text-blue-800">NSCI</span>
+                                <span className="ml-2 text-gray-700 text-sm hidden sm:block">National Sports Council of India</span>
+                            </div>
+
+                            <nav className="hidden md:flex space-x-4">
+                                {(navItems[role] || navItems.public).map((item) => (
+                                    <button
+                                        key={item.name}
+                                        onClick={() => setView(item.view)}
+                                        className="text-gray-600 hover:text-blue-800 px-3 py-2 rounded-md text-sm font-medium transition duration-150"
+                                    >
+                                        {item.name}
+                                    </button>
+                                ))}
+                            </nav>
+
+                            <div className="flex items-center space-x-3">
+                                <span className="text-xs font-semibold bg-blue-100 text-blue-800 px-3 py-1 rounded-full border border-blue-300">
+                                    Role: {roleDisplayName}
+                                </span>
+                                <span className="text-xs text-gray-500 truncate max-w-24 hidden sm:block">
+                                    ID: {userId ? userId.substring(0, 4) + '...' : 'Guest'}
+                                </span>
+                                <select
+                                    value={role}
+                                    onChange={(e) => {
+                                        setRole(e.target.value);
+                                        setView('home');
+                                    }}
+                                    className="text-xs p-1 border border-gray-300 rounded-md bg-gray-50 cursor-pointer"
+                                >
+                                    <option value="public">Public View</option>
+                                    <option value="coach">Team Coach</option>
+                                    <option value="admin">Site Admin</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+            );
+        };
+
+        const PlayerManagement = ({ db, userId, clubName }) => {
+            const [players, setPlayers] = useState([]);
+            const [newPlayer, setNewPlayer] = useState({ name: '', position: '', place: '', number: '', picUrl: 'https://placehold.co/100x100/1e40af/ffffff?text=Player', coachId: userId });
+            const [message, setMessage] = useState('');
+            const positions = ['Forward', 'Midfielder', 'Defender', 'Goalkeeper', 'Reserve'];
+
+            useEffect(() => {
+                if (!db || !userId || !collection || !onSnapshot || !query || !where) return;
+                const playersRef = collection(db, `/artifacts/${appId}/public/data/players`);
+                const q = query(playersRef, where('coachId', '==', userId));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const playerList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setPlayers(playerList);
+                }, (error) => { console.error("Error fetching players:", error); });
+                return () => unsubscribe();
+            }, [db, userId]);
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setNewPlayer(prev => ({ ...prev, [name]: value }));
+            };
+
+            const deletePlayer = async (id) => {
+                 if (!db || !deleteDoc || !doc) return;
+                 try { await deleteDoc(doc(db, `/artifacts/${appId}/public/data/players`, id)); setMessage('Player removed successfully.'); } catch (error) { console.error("Error deleting player:", error); setMessage('Failed to remove player.'); } setTimeout(() => setMessage(''), 3000);
+             };
+
+            const addPlayer = async (e) => {
+                e.preventDefault();
+                if (!db || !newPlayer.name || !newPlayer.position || !addDoc || !collection || !serverTimestamp) { setMessage('Database connection is not ready or required fields are missing.'); return; }
+                try { await addDoc(collection(db, `/artifacts/${appId}/public/data/players`), { ...newPlayer, club: clubName, createdAt: serverTimestamp(), }); setNewPlayer({ name: '', position: '', place: '', number: '', picUrl: 'https://placehold.co/100x100/1e40af/ffffff?text=Player', coachId: userId }); setMessage('Player added successfully!'); } catch (error) { console.error("Error adding player: ", error); setMessage('Failed to add player.'); } setTimeout(() => setMessage(''), 3000);
+            };
+
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-6 border-b pb-2">Team Roster Management</h2>
+                    <p className="mb-4 text-sm text-gray-600">Managing players for: <span className="font-bold text-amber-600">{clubName}</span></p>
+
+                    {message && <div className="p-3 mb-4 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+
+                    <form onSubmit={addPlayer} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg mb-8 bg-gray-50">
+                        <input
+                            type="text"
+                            name="name"
+                            placeholder="Player Name"
+                            value={newPlayer.name}
+                            onChange={handleChange}
+                            className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500"
+                            required
+                        />
+                        <select
+                            name="position"
+                            value={newPlayer.position}
+                            onChange={handleChange}
+                            className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500 bg-white"
+                            required
+                        >
+                            <option value="">Select Position</option>
+                            {positions.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        <input type="text" name="number" placeholder="Jersey Number" value={newPlayer.number} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500" />
+                        <input type="text" name="place" placeholder="Hometown/Place" value={newPlayer.place} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500" />
+                        <input type="text" name="picUrl" placeholder="Image URL (Simulated Upload - Auto-cropped)" value={newPlayer.picUrl} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500 md:col-span-2" />
+
+                        <button
+                            type="submit"
+                            disabled={!db}
+                            className={`md:col-span-3 p-3 rounded-lg font-semibold shadow-md transition duration-200 ${db ? 'bg-blue-800 text-white hover:bg-blue-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+                        >
+                            {db ? 'Add Player to Roster' : 'Connecting to Database...'}
+                        </button>
+                    </form>
+
+                    <h3 className="text-2xl font-semibold text-gray-700 mb-4">Current Roster ({players.length})</h3>
+                    <div className="space-y-4">
+                        {players.length === 0 ? (
+                            <p className="text-gray-500 italic">No players added yet. Use the form above.</p>
+                        ) : (
+                            players.map((player) => (
+                                <div key={player.id} className="flex items-center p-3 bg-gray-100 rounded-xl shadow-sm hover:shadow-md transition duration-150">
+                                    <img
+                                        src={player.picUrl || 'https://placehold.co/100x100/1e40af/ffffff?text=Player'}
+                                        alt={player.name}
+                                        className="w-16 h-16 object-cover rounded-full mr-4 border-2 border-amber-500 flex-shrink-0"
+                                        onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/100x100/1e40af/ffffff?text=Error'; }}
+                                    />
+                                    <div className="flex-grow">
+                                        <p className="font-bold text-lg text-blue-800">{player.name}</p>
+                                        <p className="text-sm text-gray-600">{player.position} | #{player.number} | {player.place}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => deletePlayer(player.id)}
+                                        className="text-red-500 hover:text-red-700 p-2 transition duration-150 rounded-full"
+                                        title="Remove Player"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.725-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 112 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const CoachReports = ({ db, clubName, userId }) => {
+            const [notifications, setNotifications] = useState([]);
+            const [reportText, setReportText] = useState('');
+            const [activeNotificationId, setActiveNotificationId] = useState(null);
+            const [message, setMessage] = useState('');
+
+            useEffect(() => {
+                if (!db || !collection || !onSnapshot || !query || !orderBy || !where) return;
+                const notifRef = collection(db, `/artifacts/${appId}/public/data/notifications`);
+                const q = query(notifRef, orderBy('createdAt', 'desc'));
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const notifList = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        reportSubmitted: doc.data().reports && doc.data().reports[clubName],
+                    })).filter(n => n.targetClub === 'All' || n.targetClub === clubName || n.targetClub === userId);
+
+                    setNotifications(notifList);
+                }, (error) => { console.error("Error fetching notifications:", error); });
+
+                return () => unsubscribe();
+            }, [db, clubName, userId]);
+
+            const submitReport = async (notificationId) => {
+                if (!db || !reportText || !updateDoc || !doc || !serverTimestamp) { setMessage('Database connection is not ready or report text cannot be empty.'); return; }
+                try {
+                    const notifDocRef = doc(db, `/artifacts/${appId}/public/data/notifications`, notificationId);
+                    await updateDoc(notifDocRef, {
+                        [`reports.${clubName}`]: { text: reportText, clubId: userId, submittedAt: serverTimestamp(), },
+                        extraWorkScore: (notifications.find(n => n.id === notificationId)?.extraWorkScore || 0) + 1,
+                    });
+                    setMessage('Report submitted successfully!'); setActiveNotificationId(null); setReportText('');
+                } catch (error) { console.error("Error submitting report:", error); setMessage('Failed to submit report.'); }
+                setTimeout(() => setMessage(''), 3000);
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-6 border-b pb-2">Admin Directives & Club Reporting</h2>
+                    {message && <div className="p-3 mb-4 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+
+                    <div className="space-y-6">
+                        {notifications.length === 0 ? (
+                            <p className="text-gray-500 italic">No active directives or notifications from the Admin.</p>
+                        ) : (
+                            notifications.map((notif) => (
+                                <div key={notif.id} className="p-4 border border-blue-200 rounded-xl bg-blue-50 shadow-md">
+                                    <div className="flex justify-between items-start">
+                                        <h3 className="font-bold text-lg text-blue-800">{notif.title}</h3>
+                                        {notif.reportSubmitted ? (
+                                            <span className="text-xs font-semibold text-green-700 bg-green-200 px-3 py-1 rounded-full">Report Sent</span>
+                                        ) : (
+                                            <span className="text-xs font-semibold text-amber-700 bg-amber-200 px-3 py-1 rounded-full">Action Required</span>
+                                        )}
+                                    </div>
+                                    <p className="text-sm text-gray-700 mt-2">{notif.directive}</p>
+
+                                    <div className="mt-4 pt-3 border-t border-blue-100">
+                                        {activeNotificationId === notif.id ? (
+                                            <div>
+                                                <textarea rows="3" value={reportText} onChange={(e) => setReportText(e.target.value)} placeholder="Upload your report or answer here..."
+                                                    className="w-full p-2 border rounded-lg focus:ring-amber-500 focus:border-amber-500 mb-3"
+                                                ></textarea>
+                                                <div className="flex justify-end space-x-2">
+                                                    <button
+                                                        onClick={() => submitReport(notif.id)}
+                                                        disabled={!db || !reportText.trim()}
+                                                        className={`px-4 py-2 text-sm rounded-lg transition duration-150 ${!db || !reportText.trim() ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-amber-500 text-white hover:bg-amber-600'}`}
+                                                    >
+                                                        Submit Report
+                                                    </button>
+                                                    <button onClick={() => setActiveNotificationId(null)} className="bg-gray-300 text-gray-800 px-4 py-2 text-sm rounded-lg hover:bg-gray-400 transition duration-150">
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => { setActiveNotificationId(notif.id); setReportText(notif.reportSubmitted?.text || ''); }}
+                                                disabled={notif.reportSubmitted || !db}
+                                                className={`px-4 py-2 text-sm rounded-lg font-semibold transition duration-150 ${notif.reportSubmitted || !db ? 'bg-green-100 text-green-700 cursor-not-allowed' : 'bg-blue-800 text-white hover:bg-blue-700 shadow-md'}`}
+                                            >
+                                                {notif.reportSubmitted ? 'Report Submitted' : 'Write Report'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const ScoreEntry = ({ db, tournamentId, tournamentName }) => {
+            const [scoreText, setScoreText] = useState('');
+            const [message, setMessage] = useState('');
+            const [updates, setUpdates] = useState([]);
+
+            useEffect(() => {
+                if (!db || !tournamentId || !collection || !onSnapshot || !query || !where || !orderBy) return;
+                const scoreRef = collection(db, `/artifacts/${appId}/public/data/scoreUpdates`);
+                const q = query(scoreRef, where('tournamentId', '==', tournamentId), orderBy('createdAt', 'desc'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const list = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data(),
+                        time: doc.data().createdAt?.toDate ? doc.data().createdAt.toDate().toLocaleTimeString() : '...'
+                    }));
+                    setUpdates(list);
+                }, (error) => { console.error("Error fetching score updates:", error); });
+                return () => unsubscribe();
+            }, [db, tournamentId]);
+
+            const submitScore = async (e) => {
+                e.preventDefault();
+                if (!db || !scoreText.trim() || !addDoc || !collection || !serverTimestamp) { setMessage('Database connection is not ready or score update text cannot be empty.'); return; }
+                try {
+                    await addDoc(collection(db, `/artifacts/${appId}/public/data/scoreUpdates`), {
+                        tournamentId, tournamentName, updateText: scoreText.trim(), createdAt: serverTimestamp(),
+                    });
+                    setMessage('Live score updated successfully!'); setScoreText('');
+                } catch (error) { console.error("Error submitting score: ", error); setMessage('Failed to submit score update.'); }
+                setTimeout(() => setMessage(''), 3000);
+            };
+
+            const isSubmitDisabled = !db || !scoreText.trim();
+
+            return (
+                <div className="p-5 mt-6 border-2 border-green-500 rounded-xl bg-green-50 shadow-inner">
+                    <h4 className="text-xl font-bold text-green-700 mb-3">Live Score Control: {tournamentName}</h4>
+                    {message && <div className="p-2 mb-3 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+
+                    <form onSubmit={submitScore} className="flex space-x-2 mb-4">
+                        <input
+                            type="text"
+                            placeholder="Enter live score update (e.g., Team A 1 - 0 Team B at 65')"
+                            value={scoreText}
+                            onChange={(e) => setScoreText(e.target.value)}
+                            className="flex-grow p-2 border border-green-300 rounded-lg focus:ring-green-500 focus:border-green-500"
+                            required
+                        />
+                        <button
+                            type="submit"
+                            disabled={isSubmitDisabled}
+                            className={`px-4 py-2 rounded-lg font-semibold transition duration-200 shadow-md text-sm ${isSubmitDisabled ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                        >
+                            {db ? 'Post Update' : 'Connecting...'}
+                        </button>
+                    </form>
+
+                    <h5 className="text-md font-semibold text-gray-700">Latest Updates:</h5>
+                    <div className="h-24 overflow-y-auto bg-white p-2 border rounded-lg text-sm space-y-1">
+                        {updates.length === 0 ? (
+                            <p className="text-gray-500 italic">No score updates posted yet.</p>
+                        ) : (
+                            updates.map((update) => (
+                                <p key={update.id} className="text-gray-800 border-b last:border-b-0">
+                                    <span className="font-medium text-green-600">[{update.time}]:</span> {update.updateText}
+                                </p>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const CoachTournamentHub = ({ db, userId, clubName }) => {
+            const [request, setRequest] = useState({ name: '', date: '', description: '', location: '', entryFee: 0 });
+            const [myTournaments, setMyTournaments] = useState([]);
+            const [message, setMessage] = useState('');
+            const [activeScoreTournamentId, setActiveScoreTournamentId] = useState(null);
+
+            useEffect(() => {
+                if (!db || !userId || !collection || !onSnapshot || !query || !where || !orderBy) return;
+                const tournamentRef = collection(db, `/artifacts/${appId}/public/data/tournaments`);
+                const q = query(tournamentRef, where('clubId', '==', userId), orderBy('createdAt', 'desc'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setMyTournaments(list);
+                }, (error) => { console.error("Error fetching tournaments:", error); });
+                return () => unsubscribe();
+            }, [db, userId]);
+
+            const handleChange = (e) => { const { name, value } = e.target; setRequest(prev => ({ ...prev, [name]: value })); };
+
+            const submitRequest = async (e) => {
+                e.preventDefault();
+                if (!db || !request.name || !request.date || !request.description || !addDoc || !collection || !serverTimestamp) { setMessage('Database connection is not ready or required fields are missing (Name, Date, Description).'); return; }
+                try {
+                    await addDoc(collection(db, `/artifacts/${appId}/public/data/tournaments`), { ...request, clubName, clubId: userId, status: 'Pending Review', entries: [], createdAt: serverTimestamp(), });
+                    setMessage('Tournament request submitted successfully! Awaiting Admin approval.'); setRequest({ name: '', date: '', description: '', location: '', entryFee: 0 });
+                } catch (error) { console.error("Error submitting request: ", error); setMessage('Failed to submit request.'); }
+                setTimeout(() => setMessage(''), 5000);
+            };
+
+            const handleReceiveEntry = async (tournamentId) => {
+                if (!db || !updateDoc || !doc) return;
+                const entryName = prompt('Enter the name of the team submitting an entry:');
+                if (!entryName) return;
+                try {
+                    const tournamentRef = doc(db, `/artifacts/${appId}/public/data/tournaments`, tournamentId);
+                    await updateDoc(tournamentRef, { entries: [...(myTournaments.find(t => t.id === tournamentId)?.entries || []), { name: entryName, receivedAt: new Date().toISOString() }] });
+                    setMessage(`Entry received from ${entryName} for the tournament.`);
+                } catch (error) { console.error("Error receiving entry: ", error); setMessage('Failed to record entry.'); }
+                setTimeout(() => setMessage(''), 5000);
+            };
+
+            const getStatusStyle = (status) => {
+                switch (status) {
+                    case 'Approved': return 'bg-green-100 text-green-700 border-green-300';
+                    case 'Rejected': return 'bg-red-100 text-red-700 border-red-300';
+                    default: return 'bg-amber-100 text-amber-700 border-amber-300';
+                }
+            };
+
+            const isSubmitDisabled = !db || !request.name.trim() || !request.date || !request.description.trim();
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-6 border-b pb-2">Club Tournament Hub: {clubName}</h2>
+                    {message && <div className="p-3 mb-4 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+
+                    {activeScoreTournamentId && ( <ScoreEntry db={db} tournamentId={activeScoreTournamentId} tournamentName={myTournaments.find(t => t.id === activeScoreTournamentId)?.name || 'Tournament'} /> )}
+
+                    <h3 className="text-2xl font-semibold text-gray-700 mb-4 mt-8">Request New Tournament Permission</h3>
+                    <form onSubmit={submitRequest} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-lg mb-8 bg-blue-50">
+                        <input type="text" name="name" placeholder="Tournament Name" value={request.name} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500" required />
+                        <input type="date" name="date" placeholder="Start Date" value={request.date} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500" required />
+                        <input type="text" name="location" placeholder="Venue/Location" value={request.location} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500" />
+                        <input type="number" name="entryFee" placeholder="Entry Fee (0 for free)" value={request.entryFee} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500" />
+                        <textarea rows="3" name="description" placeholder="Tournament Description and Rules" value={request.description} onChange={handleChange} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500 md:col-span-2" required />
+                        <button
+                            type="submit"
+                            disabled={isSubmitDisabled}
+                            className={`md:col-span-2 p-3 rounded-lg font-semibold transition duration-200 shadow-md ${isSubmitDisabled ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-blue-800 text-white hover:bg-blue-700'}`}
+                        >
+                            {db ? 'Submit for Admin Approval' : 'Connecting to Database...'}
+                        </button>
+                    </form>
+
+                    <h3 className="text-2xl font-semibold text-gray-700 mb-4 mt-8">My Club Tournaments</h3>
+                    <div className="space-y-4">
+                        {myTournaments.length === 0 ? (
+                            <p className="text-gray-500 italic">No tournaments requested yet.</p>
+                        ) : (
+                            myTournaments.map((t) => (
+                                <div key={t.id} className="p-4 bg-gray-100 rounded-xl shadow-sm border border-gray-200">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-bold text-lg text-blue-800">{t.name}</p>
+                                            <p className="text-sm text-gray-600">By: {t.date} | Location: {t.location}</p>
+                                        </div>
+                                        <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${getStatusStyle(t.status)}`}>
+                                            {t.status}
+                                        </span>
+                                    </div>
+
+                                    {t.status === 'Approved' && (
+                                        <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-center">
+                                            <p className="font-semibold text-gray-700">Entries Received: <span className="text-amber-600">{t.entries.length}</span></p>
+                                            <div className="flex space-x-2">
+                                                <button
+                                                    onClick={() => setActiveScoreTournamentId(activeScoreTournamentId === t.id ? null : t.id)}
+                                                    disabled={!db}
+                                                    className={`px-4 py-2 text-sm rounded-lg shadow-md transition duration-150 ${activeScoreTournamentId === t.id ? 'bg-green-700' : 'bg-green-500'} text-white hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed`}
+                                                >
+                                                    {activeScoreTournamentId === t.id ? 'Hide Score Panel' : 'Live Score Updates'}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleReceiveEntry(t.id)}
+                                                    disabled={!db}
+                                                    className={`px-4 py-2 text-sm rounded-lg shadow-md transition duration-150 ${db ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+                                                >
+                                                    Record New Entry
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {t.entries && t.entries.length > 0 && t.status === 'Approved' && (
+                                        <div className="mt-2 text-sm text-gray-500">
+                                            Last Entry: {t.entries[t.entries.length - 1].name}
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminDirectives = ({ db, allClubs }) => {
+            const [title, setTitle] = useState('');
+            const [directive, setDirective] = useState('');
+            const [positionFilter, setPositionFilter] = useState('');
+            const [targetClub, setTargetClub] = useState('All');
+            const [message, setMessage] = useState('');
+            const positions = ['Forward', 'Midfielder', 'Defender', 'Goalkeeper', 'Reserve', 'All'];
+
+            const sendDirective = async () => {
+                if (!db || !title || !directive || !addDoc || !collection || !serverTimestamp) { setMessage('Database connection is not ready or Title and Directive content are required.'); return; }
+                try {
+                    await addDoc(collection(db, `/artifacts/${appId}/public/data/notifications`), {
+                        title, directive, positionFilter: positionFilter === 'All' ? null : positionFilter, targetClub, reports: {}, extraWorkScore: 0, createdAt: serverTimestamp(),
+                    });
+                    setMessage('Directive sent successfully!'); setTitle(''); setDirective(''); setPositionFilter(''); setTargetClub('All');
+                } catch (error) { console.error("Error sending directive: ", error); setMessage('Failed to send directive.'); }
+                setTimeout(() => setMessage(''), 3000);
+            };
+
+            const isSendDisabled = !db || !title.trim() || !directive.trim();
+
+            return (
+                <div className="max-w-3xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-6 border-b pb-2">Send Official Directive</h2>
+                    {message && <div className="p-3 mb-4 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+
+                    <div className="space-y-4">
+                        <input type="text" placeholder="Directive Title (e.g., Q4 Training Mandate)" value={title} onChange={(e) => setTitle(e.target.value)}
+                            className="w-full p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500"
+                        />
+                        <textarea rows="4" placeholder="Full Directive/Notification Content" value={directive} onChange={(e) => setDirective(e.target.value)}
+                            className="w-full p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500"
+                        ></textarea>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <select value={targetClub} onChange={(e) => setTargetClub(e.target.value)} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500 bg-white" disabled={!db}>
+                                <option value="All">Target: All Clubs</option>
+                                {allClubs.map(club => (<option key={club.id} value={club.id}>{club.clubName} (ID: {club.id.substring(0, 4)}...)</option>))}
+                            </select>
+                            <select value={positionFilter} onChange={(e) => setPositionFilter(e.target.value)} className="p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500 bg-white" disabled={!db}>
+                                <option value="All">Specialized for (Position: All)</option>
+                                {positions.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                        </div>
+
+                        <button
+                            onClick={sendDirective}
+                            disabled={isSendDisabled}
+                            className={`w-full p-3 rounded-lg font-semibold shadow-lg transition duration-200 ${isSendDisabled ? 'bg-gray-400 text-gray-700 cursor-not-allowed' : 'bg-amber-500 text-white hover:bg-amber-600'}`}
+                        >
+                            {db ? 'Send Directive' : 'Connecting to Database...'}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const ClubGrading = ({ allClubs, allNotifications, currentRole }) => {
+            const [topClubs, setTopClubs] = useState([]);
+            const [message, setMessage] = useState('');
+            const isAdmin = currentRole === 'admin';
+
+            const clubScores = useMemo(() => {
+                const scores = {};
+                const baseScore = 1;
+
+                allClubs.forEach(club => {
+                    scores[club.clubName] = { clubName: club.clubName, id: club.id, totalScore: 0, reportsSubmitted: 0, extraWorkPoints: 0, };
+                });
+
+                allNotifications.forEach(notif => {
+                    if (notif.reports) {
+                        Object.keys(notif.reports).forEach(clubName => {
+                            if (scores[clubName]) {
+                                scores[clubName].totalScore += baseScore;
+                                scores[clubName].reportsSubmitted += 1;
+                                scores[clubName].totalScore += (notif.extraWorkScore || 0);
+                                scores[clubName].extraWorkPoints += (notif.extraWorkScore || 0);
+                            }
+                        });
+                    }
+                });
+
+                return Object.values(scores).sort((a, b) => b.totalScore - a.totalScore).slice(0, 10);
+            }, [allClubs, allNotifications]);
+
+            const selectTop5 = (club) => {
+                if (!isAdmin) return;
+                setTopClubs(prev => {
+                    if (prev.includes(club.id)) { return prev.filter(id => id !== club.id); }
+                    if (prev.length < 5) { return [...prev, club.id]; }
+                    setMessage('You can only select up to 5 clubs.');
+                    setTimeout(() => setMessage(''), 3000);
+                    return prev;
+                });
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-6 border-b pb-2">Club Performance Grading</h2>
+                    <p className="text-sm text-gray-600 mb-4">
+                        The Top 10 clubs are automatically ranked based on timely report submissions and extra work scores.
+                    </p>
+                    {isAdmin && message && <div className="p-3 mb-4 text-sm font-medium text-white bg-red-500 rounded-lg">{message}</div>}
+
+                    <h3 className="text-2xl font-semibold text-gray-700 mb-4">Top 10 Clubs Ranking</h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {clubScores.map((club, index) => (
+                            <div
+                                key={club.id}
+                                className={`p-4 rounded-xl border-2 transition-all duration-300 ${topClubs.includes(club.id) ? 'bg-amber-100 border-amber-500 shadow-lg' : 'bg-gray-50 border-gray-200'}`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <span className={`text-xl font-extrabold ${topClubs.includes(club.id) ? 'text-amber-600' : 'text-gray-800'}`}>
+                                        #{index + 1} {club.clubName}
+                                    </span>
+                                    {isAdmin && (
+                                        <button
+                                            onClick={() => selectTop5(club)}
+                                            className={`px-4 py-1 text-xs rounded-full font-semibold transition duration-150 ${topClubs.includes(club.id) ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}`}
+                                        >
+                                            {topClubs.includes(club.id) ? 'Selected (Top 5)' : 'Select for Top 5'}
+                                        </button>
+                                    )}
+                                    {!isAdmin && topClubs.includes(club.id) && (
+                                        <span className="px-4 py-1 text-xs rounded-full font-semibold bg-amber-500 text-white">
+                                            Top 5 Pick
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-sm text-gray-600 mt-2">
+                                    Total Score: <span className="font-bold text-blue-800">{club.totalScore}</span> | Reports: {club.reportsSubmitted} | Extra Points: {club.extraWorkPoints}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+
+                    {isAdmin && (
+                        <div className="mt-8 pt-4 border-t">
+                            <h3 className="text-xl font-semibold text-green-700">Currently Selected Top 5:</h3>
+                            <ul className="list-disc list-inside ml-4 mt-2 space-y-1">
+                                {topClubs.length > 0 ? (
+                                    topClubs.map(id => {
+                                        const club = allClubs.find(c => c.id === id);
+                                        return <li key={id} className="text-lg text-gray-800 font-medium">{club?.clubName || 'Unknown Club'}</li>;
+                                    })
+                                ) : (
+                                    <li className="text-gray-500 italic">No clubs selected yet.</li>
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const AdminTournamentApprovals = ({ db }) => {
+            const [requests, setRequests] = useState([]);
+            const [message, setMessage] = useState('');
+
+            useEffect(() => {
+                if (!db || !collection || !onSnapshot || !query || !orderBy) return;
+                const tournamentRef = collection(db, `/artifacts/${appId}/public/data/tournaments`);
+                const q = query(tournamentRef, orderBy('createdAt', 'desc'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setRequests(list);
+                }, (error) => { console.error("Error fetching tournament requests:", error); });
+                return () => unsubscribe();
+            }, [db]);
+
+            const handleApproval = async (id, newStatus) => {
+                if (!db || !updateDoc || !doc || !serverTimestamp) return;
+                try {
+                    const docRef = doc(db, `/artifacts/${appId}/public/data/tournaments`, id);
+                    await updateDoc(docRef, { status: newStatus, reviewedAt: serverTimestamp(), });
+                    setMessage(`Tournament ${newStatus} successfully.`);
+                } catch (error) { console.error(`Error ${newStatus} tournament: `, error); setMessage(`Failed to ${newStatus} tournament.`); }
+                setTimeout(() => setMessage(''), 3000);
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-6 border-b pb-2">Tournament Approval Queue</h2>
+                    {message && <div className="p-3 mb-4 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+
+                    <div className="space-y-6">
+                        {requests.filter(r => r.status === 'Pending Review').length === 0 && (
+                            <p className="text-gray-500 italic">No pending tournament requests at this time.</p>
+                        )}
+
+                        {requests.map((req) => (
+                            <div key={req.id} className="p-4 border rounded-xl shadow-sm transition duration-150"
+                                style={{ borderLeft: req.status === 'Approved' ? '4px solid #10b981' : req.status === 'Rejected' ? '4px solid #ef4444' : '4px solid #f59e0b' }}>
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-xl text-blue-800">{req.name}</h3>
+                                        <p className="text-sm text-gray-600">By: {req.clubName} | Date: {req.date}</p>
+                                    </div>
+                                    <span className={`text-xs font-semibold px-3 py-1 rounded-full border ${req.status === 'Approved' ? 'bg-green-200 text-green-800' : req.status === 'Rejected' ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800'}`}>
+                                        {req.status}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-gray-700 mt-2 italic">{req.description}</p>
+                                <p className="text-xs text-gray-500 mt-2">Location: {req.location} | Entry Fee: ₹{req.entryFee}</p>
+
+                                {req.status === 'Pending Review' && (
+                                    <div className="mt-4 pt-3 border-t flex space-x-3">
+                                        <button
+                                            onClick={() => handleApproval(req.id, 'Approved')}
+                                            className="bg-green-500 text-white px-4 py-2 text-sm rounded-lg hover:bg-green-600 transition duration-150 shadow-md"
+                                        >
+                                            Approve
+                                        </button>
+                                        <button
+                                            onClick={() => handleApproval(req.id, 'Rejected')}
+                                            className="bg-red-500 text-white px-4 py-2 text-sm rounded-lg hover:bg-red-600 transition duration-150 shadow-md"
+                                        >
+                                            Reject
+                                        </button>
+                                    </div>
+                                )}
+                                {req.status === 'Approved' && req.entries && req.entries.length > 0 && (
+                                     <p className="mt-2 text-xs text-green-700">Entries received: {req.entries.length}</p>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const AboutUsPanel = () => (
+            <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                <h2 className="text-4xl font-extrabold text-blue-800 mb-4">About the National Sports Council of India</h2>
+                <p className="text-lg text-amber-600 mb-6">Fostering Excellence, Unity, and Sportsmanship across the nation. </p>
+
+                <div className="space-y-6 text-gray-700">
+                    <p>
+                        The **National Sports Council of India (NSCI)** is the apex body responsible for the development, promotion, and regulation of various sports disciplines throughout the country. Our mission is to identify and nurture athletic talent from the grassroots level, ensuring India's strong representation on the global sporting stage.
+                    </p>
+                    <h3 className="text-2xl font-semibold text-blue-700 mt-8">Our Pillars:</h3>
+                    <ul className="list-disc list-inside ml-5 space-y-2">
+                        <li>
+                            **Talent Identification:** Creating a robust, nationwide ecosystem that passionately seeks out and nurtures raw, exceptional potential from every corner of India, transforming promise into podium-ready performance.
+                        </li>
+                        <li>
+                            **Infrastructure Development:** Investing strategically in the creation of inspiring, world-class training facilities and competition venues that meet global standards, ensuring every athlete has access to the environment they need to excel.
+                        </li>
+                        <li>
+                            **Governance and Transparency:** Committing to an unwavering ethical framework, guaranteeing fair play, fiscal accountability, and absolute clarity in all administrative processes to build and maintain public trust.
+                        </li>
+                        <li>
+                            **Community Engagement:** Driving profound social change by fostering a culture of mass sports participation and healthy lifestyles, making the physical and mental benefits of activity accessible and enjoyable for every citizen.
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        );
+
+        const EventsPortal = ({ db, allScoreUpdates }) => {
+            const [approvedTournaments, setApprovedTournaments] = useState([]);
+
+            useEffect(() => {
+                if (!db || !collection || !onSnapshot || !query || !where || !orderBy) return;
+                const tournamentRef = collection(db, `/artifacts/${appId}/public/data/tournaments`);
+                const q = query(tournamentRef, where('status', '==', 'Approved'), orderBy('date', 'asc'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setApprovedTournaments(list);
+                }, (error) => { console.error("Error fetching approved tournaments:", error); });
+                return () => unsubscribe();
+            }, [db]);
+
+            const latestScores = useMemo(() => {
+                return allScoreUpdates.reduce((acc, update) => {
+                    // Ensure update.createdAt has a seconds property (from serverTimestamp)
+                    const updateTime = update.createdAt && update.createdAt.seconds ? update.createdAt.seconds : 0;
+                    const accTime = acc[update.tournamentId] && acc[update.tournamentId].createdAt && acc[update.tournamentId].createdAt.seconds ? acc[update.tournamentId].createdAt.seconds : 0;
+
+                    if (!acc[update.tournamentId] || updateTime > accTime) {
+                        acc[update.tournamentId] = update;
+                    }
+                    return acc;
+                }, {});
+            }, [allScoreUpdates]);
+
+            const handleTeamEntry = async (tournamentId, tournamentName) => {
+                if (!db || !updateDoc || !doc) return;
+                const teamName = prompt(`Submitting entry for: ${tournamentName}\nPlease enter your team name:`);
+                if (!teamName || teamName.trim() === "") return;
+
+                try {
+                    const tournamentRef = doc(db, `/artifacts/${appId}/public/data/tournaments`, tournamentId);
+                    await updateDoc(tournamentRef, {
+                        entries: [...(approvedTournaments.find(t => t.id === tournamentId)?.entries || []), { name: teamName, submittedBy: 'public_entry', receivedAt: new Date().toISOString() }]
+                    });
+                    console.log(`Entry for team "${teamName}" submitted successfully!`);
+                } catch (error) {
+                    console.error("Error submitting public entry: ", error);
+                }
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                    <h2 className="text-4xl font-extrabold text-blue-800 mb-4 border-b pb-2">National Events & Tournament Hub</h2>
+                    <p className="text-gray-600 mb-6">View official NSCI events and independently-managed club tournaments.</p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-blue-50 p-6 rounded-xl border-t-4 border-blue-800 shadow-lg">
+                            <h3 className="text-2xl font-bold text-blue-800">The NSCI National Games 2026 (Official)</h3>
+                            <p className="text-amber-600 font-semibold mt-1">Status: Accepting Club Entries</p>
+                            <p className="text-sm text-gray-700 mt-3">The premier multi-sport event bringing together the best talent from all affiliated clubs. Registration deadline: March 15, 2026.</p>
+                            <button
+                                disabled={!db}
+                                className={`mt-4 px-4 py-2 rounded-lg text-sm transition duration-150 shadow-md ${db ? 'bg-blue-800 text-white hover:bg-blue-700' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+                            >
+                                Register Club
+                            </button>
+                        </div>
+
+                        {approvedTournaments.length > 0 ? (
+                            approvedTournaments.map(t => (
+                                <div key={t.id} className="bg-gray-50 p-6 rounded-xl border-t-4 border-amber-500 shadow-lg">
+                                    <h3 className="text-2xl font-bold text-gray-800">{t.name} <span className="text-base text-gray-500 font-normal">({t.clubName})</span></h3>
+                                    <p className="text-blue-800 font-semibold mt-1">Date: {t.date} | Location: {t.location}</p>
+
+                                    {latestScores[t.id] ? (
+                                        <div className="mt-3 p-3 bg-red-100 border border-red-400 rounded-lg">
+                                            <p className="font-bold text-red-600 flex items-center">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 animate-pulse" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                                                </svg>
+                                                LIVE SCORE:
+                                            </p>
+                                            <p className="text-md font-medium text-gray-800 mt-1">{latestScores[t.id].updateText}</p>
+                                            <p className="text-xs text-red-500 mt-1">Updated at: {latestScores[t.id].createdAt?.toDate ? latestScores[t.id].createdAt.toDate().toLocaleTimeString() : '...'}</p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-gray-400 mt-2 italic">No live score updates yet.</p>
+                                    )}
+
+                                    <p className="text-sm text-gray-700 mt-3">{t.description}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Entry Fee: ₹{t.entryFee} | Entries: {t.entries?.length || 0}</p>
+                                    <button
+                                        onClick={() => handleTeamEntry(t.id, t.name)}
+                                        disabled={!db}
+                                        className={`mt-4 px-4 py-2 rounded-lg text-sm transition duration-150 shadow-md ${db ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-gray-400 text-gray-700 cursor-not-allowed'}`}
+                                    >
+                                        Submit Team Entry
+                                    </button>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="md:col-span-2 p-6 bg-gray-100 rounded-xl">
+                                <p className="text-gray-500 italic">No approved club tournaments available to view at this time.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const MembershipPanel = () => (
+            <div className="max-w-4xl mx-auto p-6 bg-white shadow-xl rounded-2xl">
+                <h2 className="text-4xl font-extrabold text-blue-800 mb-4 border-b pb-2">Affiliate Membership Portal</h2>
+                <p className="text-lg text-gray-600 mb-6">Join the National Sports Council to gain official recognition, access funding, and participate in national events.</p>
+
+                <div className="space-y-6">
+                    <div className="p-4 bg-green-50 border-l-4 border-green-500 rounded-lg shadow-md">
+                        <h3 className="text-xl font-semibold text-green-700">Club Affiliation (Tier I)</h3>
+                        <p className="text-gray-700 mt-2 text-sm">Mandatory for all professional clubs participating in league play. Includes access to Coach Reporting, Player Management, and Tournament Request features.</p>
+                        <ul className="list-disc list-inside ml-5 mt-2 text-sm text-green-600">
+                            <li>Annual Fee: ₹25,000</li>
+                            <li>Eligibility: 5+ registered players, certified Head Coach.</li>
+                        </ul>
+                        <button className="mt-4 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition duration-150">
+                            Apply for Affiliation
+                        </button>
+                    </div>
+
+                    <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg shadow-md">
+                        <h3 className="text-xl font-semibold text-amber-700">Development Academy Status (Tier II)</h3>
+                        <p className="text-gray-700 mt-2 text-sm">For regional academies focused on youth development. Provides grading visibility and limited access to official directives.</p>
+                        <ul className="list-disc list-inside ml-5 mt-2 text-sm text-amber-600">
+                            <li>Annual Fee: ₹10,000</li>
+                            <li>Eligibility: Focus on players under 16, volunteer coaching staff.</li>
+                        </ul>
+                        <button className="mt-4 bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 transition duration-150">
+                            Request Academy Status
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const UserDashboard = ({ userId, role, setClubName }) => {
+            const [clubNameInput, setClubNameInput] = useState('');
+            const [message, setMessage] = useState('');
+
+            const handleUpdateClubName = () => {
+                if (clubNameInput.trim() && setClubName) {
+                    setClubName(clubNameInput.trim());
+                    setMessage(`Club name updated to: ${clubNameInput.trim()}`);
+                    setTimeout(() => setMessage(''), 3000);
+                } else {
+                    setMessage('Please enter a valid club name.');
+                    setTimeout(() => setMessage(''), 3000);
+                }
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-blue-50 shadow-xl rounded-2xl">
+                    <h2 className="text-3xl font-bold text-blue-800 mb-4">Welcome, NSCI {role === 'admin' ? 'Administrator' : 'Coach'}!</h2>
+                    <p className="text-gray-600 mb-6">Your unique user ID is: <span className="font-mono text-xs bg-blue-200 text-blue-900 p-1 rounded-md">{userId}</span></p>
+
+                    <div className="space-y-4">
+                        <div className="p-4 bg-white rounded-xl shadow-md border-t-4 border-amber-500">
+                            <h3 className="text-xl font-semibold text-amber-700 mb-2">Configure Club Identity</h3>
+                            {message && <div className="p-2 mb-3 text-sm font-medium text-white bg-green-500 rounded-lg">{message}</div>}
+                            <div className="flex space-x-2">
+                                <input
+                                    type="text"
+                                    placeholder="Enter your Club/Team Name"
+                                    value={clubNameInput}
+                                    onChange={(e) => setClubNameInput(e.target.value)}
+                                    className="flex-grow p-3 border rounded-lg focus:ring-amber-500 focus:border-amber-500"
+                                />
+                                <button
+                                    onClick={handleUpdateClubName}
+                                    className="bg-blue-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition duration-150 shadow-md"
+                                >
+                                    Set Name
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">This name will be used for all reporting and tournament requests.</p>
+                        </div>
+
+                        {role === 'admin' && (
+                             <div className="p-4 bg-white rounded-xl shadow-md border-t-4 border-blue-800">
+                                <h3 className="text-xl font-semibold text-blue-700 mb-2">Admin Panel Access</h3>
+                                <p className="text-gray-700 text-sm">You have full control over directives, tournament approvals, and performance grading. Navigate using the header menu.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+
+        // Main Application Component
+        const App = () => {
+            const [db, setDb] = useState(null);
+            const [auth, setAuth] = useState(null);
+            const [userId, setUserId] = useState(null);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [role, setRole] = useState('public'); // public, coach, admin
+            const [clubName, setClubName] = useState('');
+            const [view, setView] = useState('home');
+
+            // Global Data Stores
+            const [allClubs, setAllClubs] = useState([]);
+            const [allNotifications, setAllNotifications] = useState([]);
+            const [allScoreUpdates, setAllScoreUpdates] = useState([]);
+
+
+            // 1. Initialize Firebase and Authentication
+            useEffect(() => {
+                if (!initializeApp || !getAuth || !getFirestore || !onAuthStateChanged || !signInWithCustomToken || !signInAnonymously) {
+                    console.error("Firebase dependencies not loaded.");
+                    return;
+                }
+
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    const firestore = getFirestore(app);
+                    const authentication = getAuth(app);
+                    setDb(firestore);
+                    setAuth(authentication);
+
+                    setLogLevel('Debug'); // Enable logging for debugging
+
+                    // Handle initial sign-in and subsequent auth changes
+                    const unsubscribeAuth = onAuthStateChanged(authentication, (user) => {
+                        if (user) {
+                            setUserId(user.uid);
+                            // Set initial role based on user ID for demonstration
+                            if (user.uid.startsWith('admin')) { setRole('admin'); } else if (user.uid.startsWith('coach')) { setRole('coach'); } else { setRole('public'); }
+                            setIsAuthReady(true);
+                        } else {
+                            // Sign in anonymously if no token provided or logged out
+                            if (initialAuthToken) {
+                                signInWithCustomToken(authentication, initialAuthToken).catch(error => {
+                                    console.error("Custom token sign in failed:", error);
+                                    signInAnonymously(authentication);
+                                });
+                            } else {
+                                signInAnonymously(authentication);
+                            }
+                        }
+                    });
+
+                    return () => unsubscribeAuth();
+                } catch (error) {
+                    console.error("Error initializing Firebase:", error);
+                }
+            }, []); // Run only once on mount
+
+
+            // 2. Fetch Global Data (Clubs, Notifications, Score Updates)
+            useEffect(() => {
+                if (!db || !isAuthReady || !collection || !onSnapshot || !query || !orderBy) return;
+
+                // --- 2.1 Fetch Club List (Used for Admin Targeting / Grading) ---
+                const clubsRef = collection(db, `/artifacts/${appId}/public/data/clubs`);
+                const unsubscribeClubs = onSnapshot(clubsRef, (snapshot) => {
+                    const clubList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setAllClubs(clubList);
+                    // Set default club name based on ID for Coach
+                    if (userId && clubList.length > 0) {
+                        const userClub = clubList.find(c => c.id === userId);
+                        if (userClub && clubName === '') {
+                             setClubName(userClub.clubName);
+                        }
+                    }
+                }, (error) => { console.error("Error fetching clubs:", error); });
+
+                // --- 2.2 Fetch Global Notifications (Used for Coach Reports/Grading) ---
+                const notifRef = collection(db, `/artifacts/${appId}/public/data/notifications`);
+                const qNotif = query(notifRef, orderBy('createdAt', 'desc'));
+                const unsubscribeNotif = onSnapshot(qNotif, (snapshot) => {
+                    const notifList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setAllNotifications(notifList);
+                }, (error) => { console.error("Error fetching notifications:", error); });
+
+                // --- 2.3 Fetch Global Score Updates (Used for Public Events Portal) ---
+                const scoreRef = collection(db, `/artifacts/${appId}/public/data/scoreUpdates`);
+                const qScore = query(scoreRef, orderBy('createdAt', 'desc'));
+                const unsubscribeScore = onSnapshot(qScore, (snapshot) => {
+                    const scoreList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setAllScoreUpdates(scoreList);
+                }, (error) => { console.error("Error fetching score updates:", error); });
+
+
+                return () => {
+                    unsubscribeClubs();
+                    unsubscribeNotif();
+                    unsubscribeScore();
+                };
+            }, [db, isAuthReady, userId]);
+
+            // 3. Update Club/User Data when clubName is changed (for persistence)
+            useEffect(() => {
+                if (db && userId && clubName.trim()) {
+                    const clubDocRef = doc(db, `/artifacts/${appId}/public/data/clubs`, userId);
+                    setDoc(clubDocRef, { clubName: clubName.trim(), userId: userId }, { merge: true })
+                        .catch(error => console.error("Error setting club name:", error));
+                }
+            }, [db, userId, clubName]);
+
+
+            const renderView = () => {
+                const sharedProps = { db, userId, clubName };
+
+                if (!isAuthReady) {
+                    return (
+                        <div className="flex flex-col items-center justify-center h-96">
+                            <svg className="animate-spin h-8 w-8 text-blue-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p className="mt-4 text-gray-600">Authenticating user...</p>
+                        </div>
+                    );
+                }
+
+                switch (view) {
+                    case 'about': return <AboutUsPanel />;
+                    case 'events': return <EventsPortal db={db} allScoreUpdates={allScoreUpdates} />;
+                    case 'membership': return <MembershipPanel />;
+                    case 'grading_report': return <ClubGrading allClubs={allClubs} allNotifications={allNotifications} currentRole={role} />;
+                    case 'coach_reports': return role === 'coach' ? <CoachReports {...sharedProps} /> : <AboutUsPanel />;
+                    case 'player_management': return role === 'coach' ? <PlayerManagement {...sharedProps} /> : <AboutUsPanel />;
+                    case 'coach_tournaments': return role === 'coach' ? <CoachTournamentHub {...sharedProps} /> : <AboutUsPanel />;
+                    case 'admin_directives': return role === 'admin' ? <AdminDirectives db={db} allClubs={allClubs} /> : <AboutUsPanel />;
+                    case 'admin_tournaments': return role === 'admin' ? <AdminTournamentApprovals db={db} /> : <AboutUsPanel />;
+                    case 'admin_dashboard':
+                    case 'home':
+                    default: return <UserDashboard userId={userId} role={role} setClubName={setClubName} />;
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <Header userId={userId} role={role} setRole={setRole} setView={setView} />
+                    <main className="flex-grow p-4 md:p-8">
+                        {renderView()}
+                    </main>
+                    <footer className="bg-blue-800 text-white text-center p-3 text-sm mt-8">
+                        NSCI Portal | User ID: {userId || 'Guest'} | Status: {db ? 'Connected' : 'Connecting'}
+                    </footer>
+                </div>
+            );
+        };
+
+        // RENDER FIX: Using React 18's createRoot
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+
+    </script>
+</body>
+</html>
